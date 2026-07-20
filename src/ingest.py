@@ -3,11 +3,17 @@ from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
+import re
  
 KNOWLEDGE_BASE_DIR = "./knowledge_base"
 VECTOR_DB_DIR = "./vector_db"
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"  
+EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
  
+
+def clean_html(text: str) -> str:
+    text = re.sub(r"<[^>]+>", "", text)          
+    text = re.sub(r"\n\s*\n+", "\n\n", text)      
+    return text.strip()
  
 def main():
     print("Đang quét thư mục knowledge_base...")
@@ -31,8 +37,10 @@ def main():
         print("-> Không tìm thấy tài liệu nào. Dừng chương trình.")
         return
     print(f"-> Đã tìm thấy {len(documents)} tệp tài liệu.")
- 
-    # 2. Chunking
+    
+    for doc in documents:
+        doc.page_content = clean_html(doc.page_content)
+
     print("\n Thực hiện giai đoạn chunking ")
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,

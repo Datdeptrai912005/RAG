@@ -100,12 +100,12 @@ về thư mục `knowledge_base/` dưới dạng text thuần.
 
 ### 5.2. Nạp vào Vector Database (`ingest.py`)
 
-| Bước         | Công cụ                                                | Vai trò                                                                                                  |
-| ------------ | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| Đọc tài liệu | `DirectoryLoader` + `TextLoader` (langchain_community) | Quét toàn bộ `.md` trong `knowledge_base/`                                                               |
-| Chunking     | `RecursiveCharacterTextSplitter`                       | Chia văn bản thành đoạn ~1000 ký tự, overlap 200, ưu tiên cắt theo heading (`##`, `###`) để giữ ngữ cảnh |
-| Embedding    | `HuggingFaceEmbeddings` (model `all-MiniLM-L6-v2`)     | Chuyển mỗi đoạn văn bản thành vector số học để so sánh ngữ nghĩa                                         |
-| Lưu trữ      | `Chroma` (langchain_chroma)                            | Lưu vector + văn bản gốc vào `./vector_db`, cho phép truy vấn similarity search                          |
+| Bước          | Công cụ                                                                 | Vai trò                                                                                                  |
+| ------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Đọc tài liệu  | `DirectoryLoader` + `TextLoader` (langchain_community)                  | Quét toàn bộ `.md` trong `knowledge_base/`                                                               |
+| **Chunking**  | `RecursiveCharacterTextSplitter`                                        | Chia văn bản thành đoạn ~1000 ký tự, overlap 200, ưu tiên cắt theo heading (`##`, `###`) để giữ ngữ cảnh |
+| **Embedding** | `HuggingFaceEmbeddings` (model `paraphrase-multilingual-MiniLM-L12-v2`) | Chuyển mỗi đoạn văn bản thành vector số học để so sánh ngữ nghĩa                                         |
+| **Lưu trữ**   | `Chroma` (langchain_chroma)                                             | Lưu vector + văn bản gốc vào `./vector_db`, cho phép truy vấn similarity search                          |
 
 **Vì sao chọn `all-MiniLM-L6-v2` cho embedding:**
 
@@ -125,6 +125,18 @@ về thư mục `knowledge_base/` dưới dạng text thuần.
   họ, không được train theo cách này) sẽ làm vector câu hỏi bị lệch so với vector tài liệu, giảm độ
   chính xác similarity search. Đã sửa bằng cách chuyển sang `HuggingFaceEmbeddings`
   (package `langchain_huggingface`) — đúng chuẩn, đối xứng, không tự ý chèn instruction lạ.
+
+### Vì sao chọn `paraphrase-multilingual-MiniLM-L12-v2` cho embedding
+
+Ban đầu dự án dùng `all-MiniLM-L6-v2` — nhẹ, nhanh, nhưng qua script test độ chính xác
+(`test_accuracy.py`) phát hiện: model này chủ yếu huấn luyện trên tiếng Anh, có Recall@3 chỉ
+37.5% khi truy vấn bằng tiếng Việt trên tài liệu tiếng Anh (README, docs kỹ thuật gốc) — vấn
+đề cross-lingual retrieval.
+
+Đã chuyển sang `paraphrase-multilingual-MiniLM-L12-v2` — cùng họ MiniLM (vẫn nhẹ, chạy tốt
+CPU), nhưng hỗ trợ 50+ ngôn ngữ bao gồm tiếng Việt, giúp khớp ngữ nghĩa xuyên ngôn ngữ tốt
+hơn hẳn. Sau khi đổi, các câu hỏi từng bị miss hoàn toàn (không nằm trong top-10) đã vào
+được top-3 đến top-5.
 
 **Vì sao chọn ChromaDB:** chạy được ở dạng thư viện nhúng (embedded), lưu trực tiếp vào thư mục dự
 án (`./vector_db`), không cần dựng thêm hạ tầng (Docker, server riêng) như các vector DB dạng dịch

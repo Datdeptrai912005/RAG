@@ -25,7 +25,7 @@ if not os.path.isdir(VECTOR_DB_DIR):
         f"Hãy chạy ingest.py trước để tạo vector database."
     )
  
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 vectorstore = Chroma(persist_directory=VECTOR_DB_DIR, embedding_function=embeddings)
 retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
  
