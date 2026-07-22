@@ -1,4 +1,5 @@
 import os
+import sys
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -27,7 +28,7 @@ if not os.path.isdir(VECTOR_DB_DIR):
  
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 vectorstore = Chroma(persist_directory=VECTOR_DB_DIR, embedding_function=embeddings)
-retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
  
 llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite")
  
@@ -58,19 +59,53 @@ chain = (
  
  
 def debug_retrieval(query: str):
-    """In ra các đoạn tài liệu tìm được, để kiểm tra retriever hoạt động đúng
-    trước khi xem câu trả lời cuối cùng từ LLM."""
     docs = retriever.invoke(query)
     print(f"\nĐÃ TÌM THẤY {len(docs)} ĐOẠN DỮ LIỆU ")
     for i, doc in enumerate(docs):
         print(f"Đoạn {i + 1}: {doc.page_content[:100]}...")
+
+
+EVAL_QUESTIONS = [
+    "RAG là gì",
+    "Vì sao chọn model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 cho embedding",
+    "Lỗi HuggingFaceBgeEmbeddings là gì",
+    "MCP tool search_knowledge trả về gì",
+    "Xiaozhi hỗ trợ bao nhiêu loại board phần cứng",
+    "Thiết bị gửi tin nhắn hello khi mở kết nối WebSocket như thế nào",
+    "Tại sao không nên ghi đè cấu hình board có sẵn",
+    "Partition v2 có gì khác so với v1",
+]
+
+def run_batch_eval(questions, save_path=None):
+    rows = []
+    for i, q in enumerate(questions, start=1):
+        print(f"\nCâu {i}/{len(questions)}: {q}")
+        try:
+            answer = chain.invoke(q)
+        except Exception as e:
+            answer = f"[LỖI khi gọi LLM: {e}]"
+        print(answer)
+        rows.append((q, answer))
  
+    if save_path:
+        with open(save_path, "w", encoding="utf-8") as f:
+            f.write("# Kết quả đánh giá Generation (tuần 3)\n\n")
+            f.write("| # | Câu hỏi | Câu trả lời | Đúng/Sai | Ghi chú |\n")
+            for i, (q, answer) in enumerate(rows, start=1):
+                answer_oneline = answer.replace("\n", " ").replace("|", "\\|")
+                f.write(f"| {i} | {q} | {answer_oneline} | | |\n")
+        print(f"\n-> Đã lưu bảng kết quả tại: {save_path}")
  
+    return rows
+
+
 if __name__ == "__main__":
-    cauhoi = "Xiaozhi Robot là gì?"
- 
-    debug_retrieval(cauhoi)
- 
-    print("\n CÂU TRẢ LỜI TỪ AI ")
-    response = chain.invoke(cauhoi)
-    print(response)
+    if len(sys.argv) > 1 and sys.argv[1] == "--batch":
+        report_path = os.path.join(BASE_DIR, "..", "eval_generation_report.md")
+        run_batch_eval(EVAL_QUESTIONS, save_path=report_path)
+    else:
+        cauhoi = "Xiaozhi Robot là gì?"
+        debug_retrieval(cauhoi)
+        print("\n CÂU TRẢ LỜI TỪ AI ")
+        response = chain.invoke(cauhoi)
+        print(response)
