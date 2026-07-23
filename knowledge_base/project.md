@@ -107,7 +107,9 @@ về thư mục `knowledge_base/` dưới dạng text thuần.
 | **Embedding** | `HuggingFaceEmbeddings` (model `paraphrase-multilingual-MiniLM-L12-v2`) | Chuyển mỗi đoạn văn bản thành vector số học để so sánh ngữ nghĩa                                         |
 | **Lưu trữ**   | `Chroma` (langchain_chroma)                                             | Lưu vector + văn bản gốc vào `./vector_db`, cho phép truy vấn similarity search                          |
 
-**Vì sao chọn `all-MiniLM-L6-v2` cho embedding:**
+### Vì sao chọn `paraphrase-multilingual-MiniLM-L12-v2` cho embedding
+
+**Bắt đầu từ `all-MiniLM-L6-v2`** — chọn ban đầu vì 4 lý do:
 
 - **Chạy tốt trên CPU:** model nhẹ, không cần GPU, phù hợp máy cá nhân khi phát triển và test.
 - **Vector nhỏ (384 chiều):** giúp ChromaDB truy vấn nhanh và tốn ít dung lượng lưu trữ hơn so với
@@ -116,9 +118,9 @@ về thư mục `knowledge_base/` dưới dạng text thuần.
   liên tục trong quá trình phát triển.
 - **Đủ tốt cho tài liệu tiếng Anh/kỹ thuật:** phù hợp với phần lớn tài liệu nguồn (docs kỹ thuật của
   repo Xiaozhi) chủ yếu bằng tiếng Anh.
-  **Sửa lỗi kỹ thuật quan trọng trong quá trình làm:** ban đầu dự án dùng `HuggingFaceBgeEmbeddings`
-  với model `all-MiniLM-L6-v2`. Qua kiểm thử phát hiện đây là lựa chọn sai: `HuggingFaceBgeEmbeddings`
-  là class dành riêng cho họ model BGE, mặc định tự thêm câu instruction
+  **Phát hiện lỗi #1 — sai class embedding:** ban đầu dự án dùng `HuggingFaceBgeEmbeddings` với model
+  `all-MiniLM-L6-v2`. Qua kiểm thử phát hiện đây là lựa chọn sai: `HuggingFaceBgeEmbeddings` là class
+  dành riêng cho họ model BGE, mặc định tự thêm câu instruction
   _"Represent this question for searching relevant passages: "_ vào **mọi câu query**, nhưng
   **không** thêm gì vào văn bản tài liệu (document). Cách này chỉ đúng khi model được huấn luyện theo
   kiểu bất đối xứng (asymmetric) đó — tức đúng model BGE thật. Áp lên `all-MiniLM-L6-v2` (không cùng
@@ -126,28 +128,15 @@ về thư mục `knowledge_base/` dưới dạng text thuần.
   chính xác similarity search. Đã sửa bằng cách chuyển sang `HuggingFaceEmbeddings`
   (package `langchain_huggingface`) — đúng chuẩn, đối xứng, không tự ý chèn instruction lạ.
 
-### Vì sao chọn `paraphrase-multilingual-MiniLM-L12-v2` cho embedding
+**Phát hiện lỗi #2 — yếu về cross-lingual, phải đổi model:** sau khi sửa lỗi #1, chạy script test độ
+chính xác (`test_accuracy.py`) vẫn chỉ đạt Recall@3 = 37.5%. Phân tích log cho thấy: `all-MiniLM-L6-v2`
+chủ yếu huấn luyện trên tiếng Anh, khớp ngữ nghĩa kém khi câu hỏi tiếng Việt cần tìm trong tài liệu
+tiếng Anh (README, docs kỹ thuật gốc từ repo Xiaozhi) — vấn đề cross-lingual retrieval.
 
-Ban đầu dự án dùng `all-MiniLM-L6-v2` — nhẹ, nhanh, nhưng qua script test độ chính xác
-(`test_accuracy.py`) phát hiện: model này chủ yếu huấn luyện trên tiếng Anh, có Recall@3 chỉ
-37.5% khi truy vấn bằng tiếng Việt trên tài liệu tiếng Anh (README, docs kỹ thuật gốc) — vấn
-đề cross-lingual retrieval.
-
-Đã chuyển sang `paraphrase-multilingual-MiniLM-L12-v2` — cùng họ MiniLM (vẫn nhẹ, chạy tốt
-CPU), nhưng hỗ trợ 50+ ngôn ngữ bao gồm tiếng Việt, giúp khớp ngữ nghĩa xuyên ngôn ngữ tốt
-hơn hẳn. Sau khi đổi, các câu hỏi từng bị miss hoàn toàn (không nằm trong top-10) đã vào
-được top-3 đến top-5.
-
-**Vì sao chọn ChromaDB:** chạy được ở dạng thư viện nhúng (embedded), lưu trực tiếp vào thư mục dự
-án (`./vector_db`), không cần dựng thêm hạ tầng (Docker, server riêng) như các vector DB dạng dịch
-vụ (Milvus tự host, hoặc Pinecone — dịch vụ cloud có phí) — phù hợp cho giai đoạn phát triển và demo.
-
-**Vì sao `chunk_size=1000`, `chunk_overlap=200`:** kích thước này đủ để một chunk chứa trọn một ý
-hoàn chỉnh (ví dụ một đoạn hướng dẫn) mà không vượt quá context window của LLM khi tổng hợp câu trả
-lời; overlap 200 giúp tránh cắt đứt ý ngay tại ranh giới giữa hai chunk liền kề.
-
-**Không crawl toàn bộ ~90 board trong `xiaozhi-esp32/main/boards/`:** vì dữ liệu không liên quan đến
-phạm vi dự án sẽ gây nhiễu ngữ nghĩa, làm retrieval kém chính xác hơn — chỉ nạp đúng phạm vi cần.
+Đã chuyển sang **`paraphrase-multilingual-MiniLM-L12-v2`** — cùng họ MiniLM (vẫn nhẹ, chạy tốt CPU,
+giữ được 4 lý do chọn ban đầu ở trên), nhưng hỗ trợ 50+ ngôn ngữ bao gồm tiếng Việt, giúp khớp ngữ
+nghĩa xuyên ngôn ngữ tốt hơn hẳn. Sau khi đổi, các câu hỏi từng bị miss hoàn toàn (không nằm trong
+top-10) đã vào được top-3 đến top-5, nâng Recall@5 lên 87.5%.
 
 ## 6. MCP Server phục vụ truy vấn (`knowledge_server.py`)
 

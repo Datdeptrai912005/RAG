@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -45,8 +46,6 @@ prompt = ChatPromptTemplate.from_template(template)
  
  
 def format_docs(docs):
-    """Nối nội dung các đoạn tài liệu lại thành 1 chuỗi sạch, thay vì đưa nguyên
-    list các Document object (kèm metadata thô) vào prompt."""
     return "\n\n".join(doc.page_content for doc in docs)
  
  
@@ -63,8 +62,7 @@ def debug_retrieval(query: str):
     print(f"\nĐÃ TÌM THẤY {len(docs)} ĐOẠN DỮ LIỆU ")
     for i, doc in enumerate(docs):
         print(f"Đoạn {i + 1}: {doc.page_content[:100]}...")
-
-
+ 
 EVAL_QUESTIONS = [
     "RAG là gì",
     "Vì sao chọn model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 cho embedding",
@@ -75,34 +73,73 @@ EVAL_QUESTIONS = [
     "Tại sao không nên ghi đè cấu hình board có sẵn",
     "Partition v2 có gì khác so với v1",
 ]
-
-def run_batch_eval(questions, save_path=None):
+ 
+OUT_OF_SCOPE_QUESTIONS = [
+    "Giá bán robot Xiaozhi là bao nhiêu?",
+    "Ai là CEO của công ty sản xuất Xiaozhi?",
+    "Cách nấu phở bò truyền thống như thế nào?",
+]
+ 
+ 
+def run_batch_eval(questions, save_path=None, label="in-scope"):
     rows = []
     for i, q in enumerate(questions, start=1):
-        print(f"\nCâu {i}/{len(questions)}: {q}")
+        print(f"\n[{label}] Câu {i}/{len(questions)}: {q}")
+ 
+        start = time.time()
+        try:
+            docs = retriever.invoke(q)
+        except Exception as e:
+            docs = []
+            print(f"[LỖI khi retrieval: {e}]")
+        ends = time.time()
+        retrieval_time = ends - start
+ 
         try:
             answer = chain.invoke(q)
         except Exception as e:
             answer = f"[LỖI khi gọi LLM: {e}]"
+        t2 = time.time()
+        generation_time = t2 - ends
+        total_time = t2 - start
+ 
         print(answer)
-        rows.append((q, answer))
+        print(f"\n(retrieval: {retrieval_time:.2f}s | generation: {generation_time:.2f}s | tổng: {total_time:.2f}s)")
+ 
+        rows.append({
+            "question": q,
+            "answer": answer,
+            "retrieval_time": retrieval_time,
+            "generation_time": generation_time,
+            "total_time": total_time,
+        })
  
     if save_path:
         with open(save_path, "w", encoding="utf-8") as f:
-            f.write("# Kết quả đánh giá Generation (tuần 3)\n\n")
-            f.write("| # | Câu hỏi | Câu trả lời | Đúng/Sai | Ghi chú |\n")
-            for i, (q, answer) in enumerate(rows, start=1):
-                answer_oneline = answer.replace("\n", " ").replace("|", "\\|")
-                f.write(f"| {i} | {q} | {answer_oneline} | | |\n")
+            f.write(f"# Kết quả đánh giá Generation — {label} (tuần 3)\n\n")
+            f.write("| # | Câu hỏi | Câu trả lời | Retrieval | Generation  | Tổng | Đúng/Sai  | Ghi chú |\n")
+            for i, r in enumerate(rows, start=1):
+                answer_oneline = r["answer"].replace("\n", " ").replace("|", "\\|")
+                f.write(
+                    f"| {i} | {r['question']} | {answer_oneline} | "
+                    f"{r['retrieval_time']:.2f} | {r['generation_time']:.2f} | {r['total_time']:.2f} | | |\n"
+                )
         print(f"\n-> Đã lưu bảng kết quả tại: {save_path}")
  
+    avg_total = sum(r["total_time"] for r in rows) / len(rows) if rows else 0
+    print(f"\nThời gian trung bình mỗi câu: {avg_total:.2f}s")
+ 
     return rows
-
-
+ 
+ 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--batch":
-        report_path = os.path.join(BASE_DIR, "..", "eval_generation_report.md")
-        run_batch_eval(EVAL_QUESTIONS, save_path=report_path)
+        # Chạy: python generator.py --batch
+        in_scope_path = os.path.join(BASE_DIR, "..", "eval_generation_report.md")
+        run_batch_eval(EVAL_QUESTIONS, save_path=in_scope_path, label="in-scope")
+ 
+        out_scope_path = os.path.join(BASE_DIR, "..", "eval_out_of_scope_report.md")
+        run_batch_eval(OUT_OF_SCOPE_QUESTIONS, save_path=out_scope_path, label="out-of-scope")
     else:
         cauhoi = "Xiaozhi Robot là gì?"
         debug_retrieval(cauhoi)
